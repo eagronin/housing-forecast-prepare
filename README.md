@@ -328,7 +328,21 @@ data['rebuiltDummy'] = 0
 data.rebuiltDummy[data.yearBuilt > data.lastSaleDate.dt.year] = 1
 ```
 
-Sixth, there is a considerable variation in home prices across zipcodes.  Therefore, I added a dummy variable for each zipcode:
+Sixth, there is a considerable variation in home prices per square foot across zipcodes:  
+
+```python
+         priorSaleAmount_sqft  lastSaleAmount_sqft  estimated_value_sqft
+zipcode                                                                 
+80123              325.989608           291.466454            259.225760
+80203              362.742573           381.297086            395.870911
+80204              247.842270           279.329178            361.540286
+80205              265.983143           311.524722            394.511851
+80206              430.499172           452.784866            481.895697
+80207              324.652388           359.447086            414.608342
+80209              479.952938           495.706467            517.771521
+```
+
+Therefore, I added a dummy variable for each zipcode:
 
 ```python
 zipcode = pd.get_dummies(data.zipcode)
