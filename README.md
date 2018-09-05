@@ -265,9 +265,8 @@ def sold_comps(idTargetHome, sqftTargetHome, lonTargetHome, latTargetHome, bedTa
 
     train_cp['distance'] = distance
 
-    # calculate value estimate based on comps' lastSaleAmount if sold within last 3.5 years
-    # create an index by adding points for shorter distance from the home being valued, identical number of 
-    # bedrooms and bathrooms and shorter time elapsed since lastSaleDate
+    # calculate value estimate based on comps' lastSaleAmount if sold within last 3.5 years;
+    # create an index by adding points for shorter distance from the home being valued, identical number of bedrooms and bathrooms and shorter time elapsed since lastSaleDate
     train_cp['ind'] = 0
     train_cp.ind[(train_cp.distance <= 1) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
     train_cp.ind[(train_cp.distance <= 2) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
@@ -279,7 +278,7 @@ def sold_comps(idTargetHome, sqftTargetHome, lonTargetHome, latTargetHome, bedTa
     train_cp = train_cp.sort_values(by = ['ind', 'distance'], ascending = True)
     #print(train_cp[['ind', 'distance']].iloc[:3,:])
     train_cp = train_cp.iloc[:4,:]
-    train_cp = train_cp[train_cp.id != idTargetHome]       # exclude the home being value from the set of potential comparables
+    train_cp = train_cp[train_cp.id != idTargetHome]       # exclude the home being valued from the set of potential comparables
     soldCompsValue = train.lastSaleAmount_sqft.mean() * sqftTargetHome
 
     return soldCompsValue
@@ -330,7 +329,7 @@ data.rebuiltDummy[data.yearBuilt > data.lastSaleDate.dt.year] = 1
 
 Sixth, there is a considerable variation in home prices per square foot across zipcodes:  
 
-```python
+```
          priorSaleAmount_sqft  lastSaleAmount_sqft  estimated_value_sqft
 zipcode                                                                 
 80123              325.989608           291.466454            259.225760
