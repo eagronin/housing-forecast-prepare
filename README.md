@@ -139,6 +139,13 @@ First, while the history of sales prices is important for valuing a home, many s
 
 To fix this timing issue, I adjust lastSaleAmount for the housing price appreciation between lastSaleDate and the present using S&P/Case-Shiller CO-Denver Home Price Index.  This index increased in value from 49.856 in December 1987 to 206.014 in December 2017.   This implies the annual appreciation rate of 4.84 percent (calculated as (206.014/49.856)^(1/30)-1).  Then, for example, if a home was last sold in 2010 (eight years ago), I adjust lastSaleAmount using the following formula: lastSaleAmount * 1.0484^8-1.  I perform the same adjustment for priorSaleAmount.
 
+```python
+data['priceAppreciation'] = 1.0484
+data['lastSaleAmount'] = data.lastSaleAmount * data.priceAppreciation.pow(2018 - data.lastSaleDate.dt.year)
+data['priorSaleAmount'] = data.priorSaleAmount * data.priceAppreciation.pow(2018 - data.priorSaleDate.dt.year)
+data.drop(['priceAppreciation'], axis = 1, inplace = True)
+```
+
 Second, because homes are typically valued using information from sales of comparable homes, I created a valuation measure using estimated_value (or Zestimate) of comparable homes.  When the model was trained, each home in the training data has been valued using the three most comparable homes in the training data (i.e., the average of estimated_values for the three homes).  When the model was tested, each home in the test data has been compared to the three most comparable homes in the training set (not in the test set, because estimated_value of comparable homes cannot be used as a predictor of value at the test stage).  I used geographical proximity, the number of bedrooms and the number of bathrooms to assess comparability.  Figuratively speaking, this valuation approach is identical in spirit to an implementation of the K Nearest Neighbors algorithm.
 
 The implementation of the valuation approach using comparable homes is shown below:
@@ -246,13 +253,65 @@ def sold_comps(idTargetHome, sqftTargetHome, lonTargetHome, latTargetHome, bedTa
 
 X['soldCompVal'] = np.nan
 X.soldCompVal = X.apply(lambda x: sold_comps(x.id, x.squareFootage, x.longitude, x.latitude, x.bedrooms, x.bathrooms), axis = 1)
-
 ```
 
+Third, I construct the annualized home price appreciation between priorSaleDate and lastSaleDate.  This feature has a potential to capture the variation in home price appreciation across homes.  
 
+However, this measure is noisy because, for example, purchasing a fixer upper, refurbishing it and selling one year later at a substantially higher price would result in a home price appreciation that is not representative of home price appreciation over the lifetime of that home.
 
-Second, I construct the annualized home price appreciation between priorSaleDate and lastSaleDate.  This feature has a potential to capture the variation in home price appreciation across homes.  However, this measure is noisy because, for example, purchasing a fixer upper, refurbishing it and selling one year later at a substantially higher price would result in a home price appreciation that is not representative of home price appreciation over the lifetime of that home.
-Third, in order to account for the explosive growth in housing prices in Denver after 2012 (a pattern observed in other cities as well), I added a dummy variable that takes the value of one if lastSaleDate is after 2012, and zero otherwise.   I also added such a dummy for priorSaleDate and the interactions of these dummies with lastSaleAmount and priorSaleAmount, respectively.
-Fourth, I create a dummy for homes that were rebuilt after the last sale.  These are homes with yearBuilt greater than the year of lastSaleDate.  Identifying such homes is important because their estimated_value could be considerably higher than the last sale price.
-Fifth, as Appendix B shows, there is a considerable variation in home prices across zipcodes.  Therefore, I added a dummy variable for each zipcode. 
+The code that implements the construction of home price appreciation is shown below: 
 
+```python
+# calculate values per sq. foot
+data['estimated_value_sqft'] = data.estimated_value / data.squareFootage
+data['lastSaleAmount_sqft'] = data.lastSaleAmount / data.squareFootage
+data['priorSaleAmount_sqft'] = data.priorSaleAmount / data.squareFootage
+
+data['yearsBetweenSales'] = (data.lastSaleDate - data.priorSaleDate).dt.days/365
+data['annAppreciation'] = (data.lastSaleAmount_sqft / data.priorSaleAmount_sqft).pow(1/data.yearsBetweenSales) - 1
+
+# smooth the annualized appreciation rate as sales that occur within a few months of each other result in large variation of annualized appreciation rate; it is unlikely that home value increases or declines at an annualized rate of more than 50 percent
+data.annAppreciation[data.annAppreciation > 0.5] = 0.5
+data.annAppreciation[data.annAppreciation < -0.5] = -0.5
+```
+
+Fourth, in order to account for the explosive growth in housing prices in Denver after 2012 (a pattern observed in other cities as well), I added a dummy variable that takes the value of one if lastSaleDate is after 2012, and zero otherwise.   I also added such a dummy for priorSaleDate and the interactions of these dummies with lastSaleAmount and priorSaleAmount, respectively:
+
+```python
+data['Dummy2012ForLastSaleAmount'] = 0
+data.Dummy2012ForLastSaleAmount[data.lastSaleDate.dt.year > 2012] = 1
+data['lastSaleAmountAfter2012'] = data.lastSaleAmount * data.Dummy2012ForLastSaleAmount
+
+data['Dummy2012ForPriorSaleAmount'] = 0
+data.Dummy2012ForPriorSaleAmount[data.priorSaleDate.dt.year > 2012] = 1
+data['priorSaleAmountAfter2012'] = data.priorSaleAmount * data.Dummy2012ForPriorSaleAmount
+```
+
+Fifth, I create a dummy for homes that were rebuilt after the last sale.  These are homes with yearBuilt greater than the year of lastSaleDate.  Identifying such homes is important because their estimated_value could be considerably higher than the last sale price:
+
+```python
+data[data.yearBuilt > data.lastSaleDate.dt.year].shape
+data['rebuiltDummy'] = 0
+data.rebuiltDummy[data.yearBuilt > data.lastSaleDate.dt.year] = 1
+```
+
+Sixth, there is a considerable variation in home prices across zipcodes.  Therefore, I added a dummy variable for each zipcode:
+
+```python
+zipcode = pd.get_dummies(data.zipcode)
+
+# drop zipcodes with a very small number of home sales
+z1 = ['80203', '80204', '80205', '80206', '80207', '80209', '80123']
+z2 = zipcode.columns
+z_intersection = [value for value in z1 if value in z2]
+zipcode = zipcode[z_intersection]
+data = pd.concat([data, zipcode], axis = 1)
+```
+
+Finally, I remove the features that are not going to be used as explanatory variables in fitting the model:
+
+```python
+data.drop(['address', 'city', 'state', 'lastSaleAmount_sqft', 'priorSaleAmount_sqft', 'estimated_value_sqft'], axis = 1, inplace = True)
+```
+
+Next step:  [Analysis](https://eagronin.github.io/housing-forecast-analyze/).
