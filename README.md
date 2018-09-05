@@ -1,7 +1,7 @@
 # Data Preparation and Cleaning
 
 ## Overview
-This section first describes cleaning and processing of the data on single-family homes in Denver, CO.  It then turns to constructing new features, which were subsequently used for predicting home values.  Such new features include comparables-based valuation and forecaseted value using the history of prior sales.  Home values are subsequently predicted using a random forest model fitted to the training data and evaluated using the test data.  The model produced the test set R-squared of 0.91.  The subsequent sections discuss the steps that I took in more detail. 
+This section first describes cleaning and processing of the data on single-family homes in Denver, CO.  It then turns to constructing new features, which were subsequently used for predicting home values.  Such new features include comparable-based valuation and forecasted value using the history of prior sales.  Home values are subsequently predicted using a random forest model fitted to the training data and evaluated using the test data.  The model produced the test set R-squared of 0.91.  The subsequent sections discuss the steps that I took in more detail. 
 
 Description of the data is provided in the [previous section](https://eagronin.github.io/housing-forecast-acquire/).
 
@@ -49,7 +49,7 @@ In order to prepare the data for analysis, I evaluated accuracy of the data, imp
 
 ### 1.	Evaluation of data accuracy
 
-This step fixes inaccuracies in the data.  It removes one duplicate record, an outlier in terms of lotSize (lotSize of 278 sq. feet) and 3 outliers in terms of lastSaleAmount ($45.6 million for each - a price not consistent with the other characteristics, such as square footage). Removal of these recors is performed using the code below:
+This step fixes inaccuracies in the data.  It removes one duplicate record, an outlier in terms of lotSize (lotSize of 278 sq. feet) and 3 outliers in terms of lastSaleAmount ($45.6 million for each - a price not consistent with the other characteristics, such as square footage). Removal of these records is performed using the code below:
 
 ```python
 import pandas as pd
