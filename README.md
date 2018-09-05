@@ -141,110 +141,112 @@ To fix this timing issue, I adjust lastSaleAmount for the housing price apprecia
 
 Second, because homes are typically valued using information from sales of comparable homes, I created a valuation measure using estimated_value (or Zestimate) of comparable homes.  When the model was trained, each home in the training data has been valued using the three most comparable homes in the training data (i.e., the average of estimated_values for the three homes).  When the model was tested, each home in the test data has been compared to the three most comparable homes in the training set (not in the test set, because estimated_value of comparable homes cannot be used as a predictor of value at the test stage).  I used geographical proximity, the number of bedrooms and the number of bathrooms to assess comparability.  Figuratively speaking, this valuation approach is identical in spirit to an implementation of the K Nearest Neighbors algorithm.
 
-I have also created a similar valuation metric which uses lastSaleAmount instead of estimated_value.  The implementation of the valuation approach using comparable homes is shown below:
+The implementation of the valuation approach using comparable homes is shown below:
 
 ```python
 import pandas as pd
 import numpy as np
 from math import sin, cos, sqrt, atan2, radians
+    
+train['lat'] = train.latitude.apply(lambda i: radians(i))
+train['lon'] = train.longitude.apply(lambda i: radians(i))
+train['estimated_value_sqft'] = train.estimated_value / train.squareFootage
+train['lastSaleAmount_sqft'] = train.lastSaleAmount / train.squareFootage
 
-def comps_features(X, train):
-    
-    train['lat'] = train.latitude.apply(lambda i: radians(i))
-    train['lon'] = train.longitude.apply(lambda i: radians(i))
-    train['estimated_value_sqft'] = train.estimated_value / train.squareFootage
-    train['lastSaleAmount_sqft'] = train.lastSaleAmount / train.squareFootage
+def zestimate_comps(idTargetHome, sqftTargetHome, lonTargetHome, latTargetHome, bedTargetHome, bathTargetHome):
 
-    def zestimate_comps(idTargetHome, sqftTargetHome, lonTargetHome, latTargetHome, bedTargetHome, bathTargetHome):
-        
-        # select comparables and compute an estimate of home value based on zestimate (estimated_value) of comparables
-        
-        #print('before: ', train.shape)
-        train_cp = train   
-        #print('after: ', train_cp.shape)
-        
-        R = 6373.0        # approximate radius of earth in km
-    
-        latTargetHome = radians(latTargetHome)
-        lonTargetHome = radians(lonTargetHome)
-        
-        dlon = train.lon - lonTargetHome
-        dlat = train.lat - latTargetHome
-        
-        a = dlat.apply(lambda i: sin(i / 2)**2) + cos(latTargetHome) * train.lat.apply(lambda i: cos(i)) * dlon.apply(lambda i: sin(i / 2)**2)  
-        c = a.apply(lambda i: 2 * atan2(sqrt(i), sqrt(1 - i)))
-        
-        distance = R * c
-        
-        train_cp['distance'] = distance
-        
-        # calculate estimate of home value based on comps' zestimate
-        # create an index by adding points for shorter distance from the home being valued, identical number of 
-        # bedrooms and bathrooms 
-        train_cp['ind'] = 0
-        train_cp.ind[train_cp.distance <= 1] = train_cp.ind + 1
-        train_cp.ind[train_cp.distance <= 2] = train_cp.ind + 1
-        train_cp.ind[train_cp.bedrooms == bedTargetHome] = train_cp.ind + 1
-        train_cp.ind[train_cp.bathrooms == bathTargetHome] = train_cp.ind + 1
-        train_cp.ind = train_cp.ind.max() - train_cp.ind    
-        train_cp = train_cp.sort_values(by = ['ind', 'distance'], ascending = True)
-        #print(train_cp[['ind', 'distance']].iloc[:3,:])
-        train_cp = train_cp.iloc[:4,:]
-        train_cp = train_cp[train_cp.id != idTargetHome]       # exclude the home being value from the set of potential comparables
-        zestimateCompsValue = train_cp.estimated_value_sqft.mean() * sqftTargetHome
-        #print(train_cp[['id', 'ind', 'distance']])
-        
-        return zestimateCompsValue
-    
-    
-    def sold_comps(idTargetHome, sqftTargetHome, lonTargetHome, latTargetHome, bedTargetHome, bathTargetHome):
-        
-        # select comparables and compute an estimate of home value based on lastSaleAmount of comparables
-        
-        #print('before: ', train.shape)
-        train_cp = train[train.id != idTargetHome]   # exclude the home being valued from the set of potential comparables
-        #print('after: ', train_cp.shape)
-        
-        R = 6373.0        # approximate radius of earth in km
-    
-        latTargetHome = radians(latTargetHome)
-        lonTargetHome = radians(lonTargetHome)
-        
-        dlon = train.lon - lonTargetHome
-        dlat = train.lat - latTargetHome
-        
-        a = dlat.apply(lambda i: sin(i / 2)**2) + cos(latTargetHome) * train.lat.apply(lambda i: cos(i)) * dlon.apply(lambda i: sin(i / 2)**2)  
-        c = a.apply(lambda i: 2 * atan2(sqrt(i), sqrt(1 - i)))
-        
-        distance = R * c
-        
-        train_cp['distance'] = distance
-        
-        # calculate value estimate based on comps' lastSaleAmount if sold within last 3.5 years
-        # create an index by adding points for shorter distance from the home being valued, identical number of 
-        # bedrooms and bathrooms and shorter time elapsed since lastSaleDate
-        train_cp['ind'] = 0
-        train_cp.ind[(train_cp.distance <= 1) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
-        train_cp.ind[(train_cp.distance <= 2) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
-        train_cp.ind[(train_cp.bedrooms == bedTargetHome) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
-        train_cp.ind[(train_cp.bathrooms == bathTargetHome) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
-        train_cp.ind[train_cp.lastSaleDate.dt.year > 2015] = train_cp.ind + 1
-        train_cp.ind[train_cp.lastSaleDate.dt.year > 2016] = train_cp.ind + 1
-        train_cp.ind = train_cp.ind.max() - train_cp.ind    
-        train_cp = train_cp.sort_values(by = ['ind', 'distance'], ascending = True)
-        #print(train_cp[['ind', 'distance']].iloc[:3,:])
-        train_cp = train_cp.iloc[:4,:]
-        train_cp = train_cp[train_cp.id != idTargetHome]       # exclude the home being value from the set of potential comparables
-        soldCompsValue = train.lastSaleAmount_sqft.mean() * sqftTargetHome
-        
-        return soldCompsValue
+    # select comparables and compute an estimate of home value based on zestimate (estimated_value) of comparables
 
-    X['zestCompVal'] = np.nan
-    X.zestCompVal = X.apply(lambda x: zestimate_comps(x.id, x.squareFootage, x.longitude, x.latitude, x.bedrooms, x.bathrooms), axis = 1)
-    X['soldCompVal'] = np.nan
-    X.soldCompVal = X.apply(lambda x: sold_comps(x.id, x.squareFootage, x.longitude, x.latitude, x.bedrooms, x.bathrooms), axis = 1)
+    #print('before: ', train.shape)
+    train_cp = train   
+    #print('after: ', train_cp.shape)
 
-    return X
+    R = 6373.0        # approximate radius of earth in km
+
+    latTargetHome = radians(latTargetHome)
+    lonTargetHome = radians(lonTargetHome)
+
+    dlon = train.lon - lonTargetHome
+    dlat = train.lat - latTargetHome
+
+    a = dlat.apply(lambda i: sin(i / 2)**2) + cos(latTargetHome) * train.lat.apply(lambda i: cos(i)) * dlon.apply(lambda i: sin(i / 2)**2)  
+    c = a.apply(lambda i: 2 * atan2(sqrt(i), sqrt(1 - i)))
+
+    distance = R * c
+
+    train_cp['distance'] = distance
+
+    # calculate estimate of home value based on comps' zestimate
+    # create an index by adding points for shorter distance from the home being valued, identical number of 
+    # bedrooms and bathrooms 
+    train_cp['ind'] = 0
+    train_cp.ind[train_cp.distance <= 1] = train_cp.ind + 1
+    train_cp.ind[train_cp.distance <= 2] = train_cp.ind + 1
+    train_cp.ind[train_cp.bedrooms == bedTargetHome] = train_cp.ind + 1
+    train_cp.ind[train_cp.bathrooms == bathTargetHome] = train_cp.ind + 1
+    train_cp.ind = train_cp.ind.max() - train_cp.ind    
+    train_cp = train_cp.sort_values(by = ['ind', 'distance'], ascending = True)
+    #print(train_cp[['ind', 'distance']].iloc[:3,:])
+    train_cp = train_cp.iloc[:4,:]
+    train_cp = train_cp[train_cp.id != idTargetHome]       # exclude the home being value from the set of potential comparables
+    zestimateCompsValue = train_cp.estimated_value_sqft.mean() * sqftTargetHome
+    #print(train_cp[['id', 'ind', 'distance']])
+
+    return zestimateCompsValue
+    
+X['zestCompVal'] = np.nan
+X.zestCompVal = X.apply(lambda x: zestimate_comps(x.id, x.squareFootage, x.longitude, x.latitude, x.bedrooms, x.bathrooms), axis = 1)
+
+```
+
+I have also created a similar valuation metric which uses lastSaleAmount (adjusted to the present value of the home using the S&P Case Shiller index as shown above) instead of estimated_value:
+
+```python
+def sold_comps(idTargetHome, sqftTargetHome, lonTargetHome, latTargetHome, bedTargetHome, bathTargetHome):
+
+    # select comparables and compute an estimate of home value based on lastSaleAmount of comparables
+
+    #print('before: ', train.shape)
+    train_cp = train[train.id != idTargetHome]   # exclude the home being valued from the set of potential comparables
+    #print('after: ', train_cp.shape)
+
+    R = 6373.0        # approximate radius of earth in km
+
+    latTargetHome = radians(latTargetHome)
+    lonTargetHome = radians(lonTargetHome)
+
+    dlon = train.lon - lonTargetHome
+    dlat = train.lat - latTargetHome
+
+    a = dlat.apply(lambda i: sin(i / 2)**2) + cos(latTargetHome) * train.lat.apply(lambda i: cos(i)) * dlon.apply(lambda i: sin(i / 2)**2)  
+    c = a.apply(lambda i: 2 * atan2(sqrt(i), sqrt(1 - i)))
+
+    distance = R * c
+
+    train_cp['distance'] = distance
+
+    # calculate value estimate based on comps' lastSaleAmount if sold within last 3.5 years
+    # create an index by adding points for shorter distance from the home being valued, identical number of 
+    # bedrooms and bathrooms and shorter time elapsed since lastSaleDate
+    train_cp['ind'] = 0
+    train_cp.ind[(train_cp.distance <= 1) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
+    train_cp.ind[(train_cp.distance <= 2) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
+    train_cp.ind[(train_cp.bedrooms == bedTargetHome) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
+    train_cp.ind[(train_cp.bathrooms == bathTargetHome) & (train_cp.lastSaleDate.dt.year > 2014)] = train_cp.ind + 1
+    train_cp.ind[train_cp.lastSaleDate.dt.year > 2015] = train_cp.ind + 1
+    train_cp.ind[train_cp.lastSaleDate.dt.year > 2016] = train_cp.ind + 1
+    train_cp.ind = train_cp.ind.max() - train_cp.ind    
+    train_cp = train_cp.sort_values(by = ['ind', 'distance'], ascending = True)
+    #print(train_cp[['ind', 'distance']].iloc[:3,:])
+    train_cp = train_cp.iloc[:4,:]
+    train_cp = train_cp[train_cp.id != idTargetHome]       # exclude the home being value from the set of potential comparables
+    soldCompsValue = train.lastSaleAmount_sqft.mean() * sqftTargetHome
+
+    return soldCompsValue
+
+X['soldCompVal'] = np.nan
+X.soldCompVal = X.apply(lambda x: sold_comps(x.id, x.squareFootage, x.longitude, x.latitude, x.bedrooms, x.bathrooms), axis = 1)
+
 ```
 
 
