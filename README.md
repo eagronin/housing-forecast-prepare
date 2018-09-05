@@ -1,7 +1,7 @@
 # Data Preparation and Cleaning
 
 ## Overview
-This section first describes cleaning and processing of the data on single-family homes in Denver, CO.  It then turns to construction of new features that were subsequently used for predicting home values along with the existing features.  The new features include comparables-based valuation and forecaseted value using the history of prior sales.  The existing features were listed in the [previous section](https://eagronin.github.io/housing-forecast-acquire/).  Home values are subsequently predicted using a random forest model fitted to a training set and evaluated using a test set.  The model produced the test set R-squared of 0.92.  The subsequent sections discuss the steps that I took in more detail. 
+This section first describes cleaning and processing of the data on single-family homes in Denver, CO.  It then turns to constructing new features, which were subsequently used for predicting home values.  Such new features include comparables-based valuation and forecaseted value using the history of prior sales.  Home values are subsequently predicted using a random forest model fitted to the training data and evaluated using the test data.  The model produced the test set R-squared of 0.91.  The subsequent sections discuss the steps that I took in more detail. 
 
 Description of the data is provided in the [previous section](https://eagronin.github.io/housing-forecast-acquire/).
 
@@ -37,7 +37,7 @@ data.priorSaleDate = pd.to_datetime(data.priorSaleDate)
 print(np.around(data[['lastSaleDate', 'priorSaleDate']].describe().transpose(), decimals=2).to_string())
 ```
 
-Which results in the following output: 
+This results in the following output: 
 
 ```
                count unique                  top freq                first                 last
@@ -45,11 +45,11 @@ lastSaleDate   15000   4347  2014-03-03 00:00:00   19  1997-08-01 00:00:00  2017
 priorSaleDate  11173   4475  2008-01-03 00:00:00   15  1967-05-10 00:00:00  2017-07-11 00:00:00
 ```
 
-In order to prepare the data for the analysis, I evaluated accuracy of the data, imputed missing values and constructed new features. 
+In order to prepare the data for analysis, I evaluated accuracy of the data, imputed missing values and constructed new features. 
 
 ### 1.	Evaluation of data accuracy
 
-This step fixes inaccuracies in the data.  It removes one duplicate record, an outlier in terms of lotSize (lotSize of 278 sq. feet) and 3 outliers in terms of lastSaleAmount ($45.6 million for each - a price not consistent with the other characteristics of these homes, such as square footage). Removal of these recors is performed using the code below:
+This step fixes inaccuracies in the data.  It removes one duplicate record, an outlier in terms of lotSize (lotSize of 278 sq. feet) and 3 outliers in terms of lastSaleAmount ($45.6 million for each - a price not consistent with the other characteristics, such as square footage). Removal of these recors is performed using the code below:
 
 ```python
 import pandas as pd
@@ -76,9 +76,11 @@ def check_data_accuracy(data):
 ```
 
 ### 2.	Imputing missing values
-A look at the summary statistics above reveals that the most significant issue in the data is a large number of missing values for priorSaleDate and priorSaleAmount.   Further, there are also 1,296 zero values for priorSaleAmount.  
+A look at the summary statistics above reveals that the most significant issue in the data is a large number of missing values for priorSaleDate and priorSaleAmount.  Further, there are also 1,296 zero values for priorSaleAmount.  
 
-With respect to these zero values, it appears that the time period between the last and prior sale dates is substantially shorter when prior sale amount is zero (611 days on average) compared to when priorSaleAmount is not zero (2080 days on average).  It is possible that such prior sales never occurred and rather represent a stage in the process of the last sale.  If the same sale sometimes appears in the data both as the last sale and as the prior sale, we would expect sales dates and amounts to match between lastSaleDate and priorSaleDate for at least a small portion of the dataset.  There are indeed 155 samples in which priorSaleDate and priorSaleAmount are identical to lastSaleDate and lastSaleAmount, respectively.
+With respect to these zero values, it appears that the time period between the last and prior sale dates is substantially shorter when prior sale amount is zero (611 days on average) compared to when priorSaleAmount is not zero (2080 days on average).  It is possible that such prior sales never occurred and rather represent a stage in the process of the last sale.  
+
+If the same sale sometimes appears in the data both as the last sale and as the prior sale, we would expect sales dates and amounts to match between lastSaleDate and priorSaleDate for at least a small portion of the dataset.  There are indeed 155 samples in which priorSaleDate and priorSaleAmount are identical to lastSaleDate and lastSaleAmount, respectively.
 
 Based on the above observations I assume that when priorSaleAmount is zero, there was only one sale.  I set priorSaleAmount and priorSaleDate to lastSaleAmount and lastSaleDate when priorSaleAmount is either zero or missing, or when priorSaleDate is missing.  I further assume that observations with identical lastSaleDate and priorSaleDate but different lastSaleAmount and priorSaleAmount also have only one sale, and change priorSaleAmount to lastSaleAmount.  In the records with priorSaleDate coming after lastSaleDate, I set priorSaleDate to lastSaleDate. Finally, I create a dummy variable taking value of 1 when prior sale exists and 0 otherwise.
 
@@ -132,7 +134,7 @@ def impute_missing_values(data):
     return data
 ```
 
-The refined summary statistics after cleaning the data and imputing missing values are showned below:
+The refined summary statistics after cleaning the data and imputing missing values are shown below:
 
 ```
                                count         mean          std        min          25%          50%          75%           max
@@ -168,9 +170,11 @@ priorSaleAmountAfter2012     14995.0     75165.38    312688.04       0.00       
 ### 3.	Constructing new features
 I construct several new features and make adjustments to the existing features in order to enhance the model’s performance.  I discuss the steps that I took below.
 
-First, while the history of sales prices is important for valuing a home, many sales in the data took place a long time ago.  Sale amounts are not adjusted for the appreciation in home value between lastSaleDate and present time.  The following example demonstrates how this issue can affect the model’s performance.  Suppose, for example, that home A is currently valued at $2 million and home B is currently valued at $1 million.  The data also shows that home A was last sold in 1990 for $600,000, while home B was last sold recently in 2018.  In this example, a model that uses lastSaleAmount as a feature may predict a lower value for home A even though this home is as twice as much more expensive than home B. 
+First, while the history of sales prices is important for valuing a home, many sales in the data took place a long time ago.  Sale amounts are not adjusted for the appreciation in home value between lastSaleDate and present time.  
 
-To fix this timing issue, I adjust lastSaleAmount for the housing price appreciation between lastSaleDate and the present using S&P/Case-Shiller CO-Denver Home Price Index.  This index increased in value from 49.856 in December 1987 to 206.014 in December 2017.   This implies the annual appreciation rate of 4.84 percent (calculated as (206.014/49.856)^(1/30)-1).  Then, for example, if a home was last sold in 2010 (eight years ago), I adjust lastSaleAmount using the following formula: lastSaleAmount * 1.0484^8-1.  I perform the same adjustment for priorSaleAmount.
+The following example demonstrates how this issue can affect the model’s performance.  Suppose, for example, that home A is currently valued at $2 million and home B is currently valued at $1 million.  The data also shows that home A was last sold in 1990 for $600,000, while home B was last sold recently in 2018.  In this example, a model that uses lastSaleAmount as a feature may predict a lower value for home A even though this home is as twice as much more expensive than home B. 
+
+To fix this timing issue, I adjust lastSaleAmount for the housing price appreciation between lastSaleDate and the present using [S&P/Case-Shiller CO-Denver Home Price Index](https://fred.stlouisfed.org/series/DNXRSA).  This index increased in value from 49.856 in December 1987 to 206.014 in December 2017.   This implies the annual appreciation rate of 4.84 percent (calculated as (206.014/49.856)^(1/30)-1).  Then, for example, if a home was last sold in 2010 (eight years ago), I adjust lastSaleAmount using the following formula: lastSaleAmount * 1.0484^8-1.  I perform the same adjustment for priorSaleAmount.
 
 ```python
 data['priceAppreciation'] = 1.0484
